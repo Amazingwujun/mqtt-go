@@ -1,10 +1,8 @@
 package main
 
 import (
-	"encoding/binary"
 	"log"
-	"mqtt-go/codec"
-	"mqtt-go/handler"
+	"mqtt-go/mqtt"
 	"net"
 	"time"
 )
@@ -18,7 +16,6 @@ func main() {
 	}
 
 	log.Printf("服务器启动完成")
-	// todo start hook
 
 	for {
 		conn, err := l.Accept()
@@ -27,21 +24,30 @@ func main() {
 			continue
 		}
 
-		log.Printf("remote: [%s]", conn.RemoteAddr().String())
-
-		tcpConn, _ := conn.(*net.TCPConn)
-		handleNewConn(tcpConn)
+		// 处理
+		go handleNewConn(conn)
 	}
 }
 
-func handleNewConn(conn *net.TCPConn) {
-	defer conn.Close()
+func handleNewConn(conn net.Conn) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("panic info:%v\n", err)
+		}
+	}()
 
-	// 解码消息传递 channel
-	c := make(chan interface{}, 10)
-	//c1 := make(chan bool)
-	go handler.ChannelRead(c)
-	//go idleHandler(c1, conn)
+	log.Printf("remote: [%s]", conn.RemoteAddr().String())
+	wrapConn := mqtt.NewChannel(conn)
+	wrapConn.Handler.ChannelActive(wrapConn)
+
+	// 释放资源并广播连接断开事件
+	defer func() {
+		err := wrapConn.Close()
+		if err != nil {
+			log.Printf("连接关闭异常：%v", err)
+		}
+		wrapConn.Handler.ChannelInactive(wrapConn)
+	}()
 
 	// 开始解码
 	var cumulation []byte
@@ -49,13 +55,11 @@ func handleNewConn(conn *net.TCPConn) {
 		// 读 buf
 		buf := make([]byte, 512)
 
-		n, err := conn.Read(buf)
+		n, err := wrapConn.Read(buf)
 		if err != nil {
 			log.Printf("连接断开: %s\n", err.Error())
 			return
 		}
-		// 收到消息
-		//c1 <- true
 
 		// 可用 slice
 		buf = buf[:n]
@@ -63,7 +67,7 @@ func handleNewConn(conn *net.TCPConn) {
 			buf = append(cumulation, buf...)
 		}
 
-		left, err := codec.Decode(buf, c)
+		mqttMessage, left, err := mqtt.Decode(buf)
 		if err != nil {
 			log.Printf("解码错误: %s\n", err.Error())
 			return
@@ -72,6 +76,9 @@ func handleNewConn(conn *net.TCPConn) {
 			cumulation = left
 		} else {
 			cumulation = make([]byte, 0)
+		}
+		if mqttMessage != nil {
+			wrapConn.Handler.ChannelRead(mqttMessage)
 		}
 	}
 }
@@ -88,28 +95,4 @@ func idleHandler(c chan bool, conn net.Conn) {
 			log.Printf("收到消息通知")
 		}
 	}
-}
-
-// tcp 流拆包
-func decode(msg []byte, c chan<- interface{}) ([]byte, error) {
-	// 数据缓存大小
-	bufLen := uint32(len(msg))
-	if bufLen < 4 {
-		return msg, nil
-	}
-
-	// 消息体长度
-	msgLen := binary.BigEndian.Uint32(msg)
-	if (bufLen - 4) < msgLen {
-		return msg, nil
-	}
-
-	// 开始解码
-	message := msg[:msgLen+4]
-	c <- message
-
-	// 检查数据流状态
-	cumulation := msg[msgLen+4:]
-
-	return decode(cumulation, c)
 }
