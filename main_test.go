@@ -34,6 +34,6 @@ func TestDemo(t *testing.T) {
 func TestDemo1(t *testing.T) {
 	s := []byte{0, 4, 'a', 'b', 'c', 'd'}
 	fmt.Printf("%v\n", s)
-	mqttString := mqtt.DecodeMqttString(s)
+	mqttString, _ := mqtt.DecodeMqttString(s, 0)
 	fmt.Printf(mqttString)
 }

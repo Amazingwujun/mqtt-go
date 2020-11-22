@@ -117,18 +117,18 @@ func Decode(buf []byte) (*MqttMessage, []byte, error) {
 // 格式见: MQTTV3.1.1 -> 1.5.3 UTF-8 encoded strings
 func DecodeMqttString(buf []byte, start int) (string, int) {
 	// 先读取长度
-	u := binary.BigEndian.Uint16(buf[start:])
+	u := int(binary.BigEndian.Uint16(buf[start:]))
 
 	// 返回下一个未读字节的索引
-	return string(buf[2 : 2+u]), 2 + int(u) + start
+	return string(buf[start+2 : start+2+u]), start + 2 + u
 }
 
 func DecodeMqttBytes(buf []byte, start int) ([]byte, int) {
 	// 先读取长度
-	u := binary.BigEndian.Uint16(buf[start:])
+	u := int(binary.BigEndian.Uint16(buf[start:]))
 
 	// 返回下一个未读字节的索引
-	return buf[2 : 2+u], 2 + int(u) + start
+	return buf[start+2 : start+2+u], start + 2 + u
 }
 
 // 解码载荷

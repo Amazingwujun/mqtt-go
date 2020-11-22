@@ -10,7 +10,7 @@ import (
 func main() {
 	log.Printf("启动服务...")
 
-	l, err := net.Listen("tcp", ":32960")
+	l, err := net.Listen("tcp", ":1884")
 	if err != nil {
 		log.Fatal(err)
 	}

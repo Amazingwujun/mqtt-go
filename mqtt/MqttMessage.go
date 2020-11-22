@@ -120,7 +120,7 @@ func ReadFrom(buf []byte) (result *MqttConnVariableHeader, _ error) {
 	result.CleanSession = (connectFlags&0b10)>>1 == 1
 	result.WillFlag = (connectFlags&0b100)>>2 == 1
 	result.UsernameFlag = (connectFlags&0x80)>>7 == 1
-	result.PasswordFlag = (connectFlags&0x40)>>7 == 1
+	result.PasswordFlag = (connectFlags&0x40)>>6 == 1
 
 	// If the Will Flag is set to 0, then the Will Retain Flag MUST be set to 0 [MQTT-3.1.2-15].
 	// If the Will Flag is set to 1:
