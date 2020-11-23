@@ -1,12 +1,22 @@
 package mqtt
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"sync"
 	"sync/atomic"
 )
+
+var triggerCount = 0
+
+// 字节池
+var bytesPool = &sync.Pool{New: func() interface{} {
+	triggerCount++
+	fmt.Printf("触发次数: %d\n", triggerCount)
+	return make([]byte, 512)
+}}
 
 // 包装 net.Conn
 type Channel struct {
@@ -23,7 +33,15 @@ type Channel struct {
 	Attr map[string]interface{}
 
 	// 进站数据处理
-	Handler InboundHandler
+	InboundHandler InboundHandler
+
+	encoder func(msg *MqttMessage) []byte
+
+	// []byte pool
+	pool *sync.Pool
+
+	// 输出流
+	Out chan []byte
 
 	// 读写锁
 	lock sync.RWMutex
@@ -31,24 +49,28 @@ type Channel struct {
 
 func NewChannel(conn net.Conn) *Channel {
 	c := &Channel{
-		Id:      NewId(),
-		LongId:  NewId(),
-		Source:  conn,
-		Closed:  false,
-		Attr:    make(map[string]interface{}, 8),
-		Handler: &DefaultInboundHandler{},
+		Id:             NewId(),
+		LongId:         NewId(),
+		Source:         conn,
+		Closed:         false,
+		Attr:           make(map[string]interface{}, 8),
+		InboundHandler: &DefaultInboundHandler{},
+		Out:            make(chan []byte, 10),
+		encoder:        Encode,
+		pool:           bytesPool,
 	}
 
 	return c
 }
 
 // 写入数据
-func (this *Channel) Write(data []byte) (int, error) {
-	if len(data) > 0 && !this.Closed {
-		return this.Source.Write(data)
-	}
+func (this *Channel) Write(msg *MqttMessage) {
+	this.Out <- this.encoder(msg)
+}
 
-	return 0, nil
+// 直接写入数据
+func (this *Channel) Write0(buf []byte) (int, error) {
+	return this.Source.Write(buf)
 }
 
 // 关闭连接，释放资源
@@ -60,6 +82,14 @@ func (this *Channel) Close() error {
 	}
 
 	return nil
+}
+
+func (this *Channel) Get() []byte {
+	return this.pool.Get().([]byte)
+}
+
+func (this *Channel) Put(buf []byte) {
+	this.pool.Put(buf)
 }
 
 // 读取数据

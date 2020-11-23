@@ -19,6 +19,43 @@ type MqttMessage struct {
 	Payload interface{}
 }
 
+func (this *MqttMessage) String() string {
+	return fmt.Sprintf("fixedHeader: %v variableHeader: %v payload: %v", *this.FixedHeader, this.VariableHeader, this.Payload)
+}
+
+func BuildConnack(sessionPresent bool, code byte) *MqttMessage {
+	msg := &MqttMessage{
+		FixedHeader: &MqttFixedHeader{
+			MessageType:  CONNACK,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 0,
+		},
+		VariableHeader: &MqttConnackVariableHeader{
+			SessionPresent: sessionPresent,
+			Code:           code,
+		},
+		Payload: nil,
+	}
+
+	return msg
+}
+
+func BuildPingAck() *MqttMessage {
+	msg := &MqttMessage{
+		FixedHeader: &MqttFixedHeader{
+			MessageType:  PINGRESP,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 0,
+		},
+	}
+
+	return msg
+}
+
 /*             fixed header                  */
 
 func (this *MqttMessage) Write(channel *Channel) {
@@ -98,6 +135,22 @@ type MqttConnVariableHeader struct {
 	KeepAlive time.Duration
 }
 
+type MqttConnackVariableHeader struct {
+	SessionPresent bool
+
+	Code byte
+}
+
+func (this *MqttConnackVariableHeader) toBytes() []byte {
+	buf := make([]byte, 2)
+	if this.SessionPresent {
+		buf[0] = 1
+	}
+	buf[1] = this.Code
+
+	return buf
+}
+
 func ReadFrom(buf []byte) (result *MqttConnVariableHeader, _ error) {
 
 	// 校验协议名称
@@ -149,4 +202,8 @@ type MqttConnPayload struct {
 	WillTopic string
 
 	WillMessage []byte
+}
+
+// connack
+type MqttConnAck struct {
 }

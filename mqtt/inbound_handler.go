@@ -1,6 +1,8 @@
 package mqtt
 
-import "log"
+import (
+	"time"
+)
 
 var ChannelGroup = make(map[string]*Channel, 10000)
 
@@ -13,16 +15,16 @@ type InboundHandler interface {
 	ChannelInactive(channel *Channel)
 
 	// 收到消息
-	ChannelRead(msg *MqttMessage)
+	ChannelRead(channel *Channel, msg *MqttMessage)
 }
 
 // 默认实现
 type DefaultInboundHandler struct {
+	start time.Time
 }
 
 // tcp 连接建立
 func (this *DefaultInboundHandler) ChannelActive(channel *Channel) {
-	// 阻塞至此
 	ChannelGroup[channel.Id] = channel
 }
 
@@ -31,6 +33,15 @@ func (this *DefaultInboundHandler) ChannelInactive(channel *Channel) {
 	delete(ChannelGroup, channel.Id)
 }
 
-func (this *DefaultInboundHandler) ChannelRead(msg *MqttMessage) {
-	log.Printf("收到 mqtt 报文:%v\n", msg)
+func (this *DefaultInboundHandler) ChannelRead(channel *Channel, msg *MqttMessage) {
+	messageType := msg.FixedHeader.MessageType
+	switch messageType {
+	case CONNECT:
+		connack := BuildConnack(false, 0)
+		channel.Write(connack)
+	case PINGREQ:
+		ack := BuildPingAck()
+		channel.Write(ack)
+	}
+
 }
