@@ -6,8 +6,6 @@ import (
 	"fmt"
 )
 
-const PROTOCOL_NAME = "MQTT"
-
 const (
 	CONNECT byte = iota + 1
 	CONNACK
@@ -91,6 +89,7 @@ func Decode(buf []byte) (*MqttMessage, []byte, error) {
 			return msg, buf[mqttMsgLen:], nil
 		}
 	case PUBLISH:
+
 		fallthrough
 	case PUBACK:
 		fallthrough

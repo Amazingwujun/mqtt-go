@@ -1,27 +1,28 @@
 package mqtt
 
 import (
-	"fmt"
 	"log"
+	"math"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 )
 
-var triggerCount = 0
+var (
+	idCounter uint64 = 0
+)
 
 // 字节池
 var bytesPool = &sync.Pool{New: func() interface{} {
-	triggerCount++
-	fmt.Printf("触发次数: %d\n", triggerCount)
 	return make([]byte, 512)
 }}
 
 // 包装 net.Conn
 type Channel struct {
-	// 短，长 id
-	Id, LongId string
+	// 短
+	Id string
 
 	// 原始连接
 	Source net.Conn
@@ -40,6 +41,9 @@ type Channel struct {
 	// []byte pool
 	pool *sync.Pool
 
+	// packageId
+	packageId uint16
+
 	// 输出流
 	Out chan []byte
 
@@ -50,17 +54,28 @@ type Channel struct {
 func NewChannel(conn net.Conn) *Channel {
 	c := &Channel{
 		Id:             NewId(),
-		LongId:         NewId(),
 		Source:         conn,
 		Closed:         false,
 		Attr:           make(map[string]interface{}, 8),
-		InboundHandler: &DefaultInboundHandler{},
+		InboundHandler: NewInboundHandler(),
 		Out:            make(chan []byte, 10),
 		encoder:        Encode,
 		pool:           bytesPool,
+		packageId:      0,
 	}
 
 	return c
+}
+
+// 返回下一个 packageId
+func (this *Channel) NextPackageId() uint16 {
+	if this.packageId == 0 {
+		this.packageId++
+	} else if math.MaxUint16 == this.packageId {
+		this.packageId = 1
+		return math.MaxUint16
+	}
+	return this.packageId
 }
 
 // 写入数据
@@ -114,8 +129,7 @@ func init() {
 }
 
 func NewId() string {
-
-	return ""
+	return strconv.FormatUint(atomic.AddUint64(&idCounter, 1), 10)
 }
 
 func machineId() (string, error) {

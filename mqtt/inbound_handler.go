@@ -1,9 +1,5 @@
 package mqtt
 
-import (
-	"time"
-)
-
 var ChannelGroup = make(map[string]*Channel, 10000)
 
 type InboundHandler interface {
@@ -20,7 +16,12 @@ type InboundHandler interface {
 
 // 默认实现
 type DefaultInboundHandler struct {
-	start time.Time
+}
+
+var inboundHandler = DefaultInboundHandler{}
+
+func NewInboundHandler() *DefaultInboundHandler {
+	return &inboundHandler
 }
 
 // tcp 连接建立

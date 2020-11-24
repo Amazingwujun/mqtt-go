@@ -191,6 +191,17 @@ func ReadFrom(buf []byte) (result *MqttConnVariableHeader, _ error) {
 	return result, nil
 }
 
+type MqttPublishVaribleHeader struct {
+	TopicName string
+	PackageId uint16
+}
+
+func (this *MqttPublishVaribleHeader) ParseFrom(buf []byte) {
+	var index int
+	this.TopicName, index = DecodeMqttString(buf, 0)
+	this.PackageId = binary.BigEndian.Uint16(buf[index:])
+}
+
 /*             payload                  */
 type MqttConnPayload struct {
 	ClientId string
