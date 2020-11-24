@@ -2,10 +2,10 @@ package mqtt
 
 import (
 	"fmt"
-	"log"
+	"sync"
 )
 
-var ChannelGroup = make(map[string]*Channel, 10000)
+var ChannelGroup = sync.Map{}
 
 type InboundHandler interface {
 
@@ -31,12 +31,12 @@ func NewInboundHandler() *DefaultInboundHandler {
 
 // tcp 连接建立
 func (this *DefaultInboundHandler) ChannelActive(channel *Channel) {
-	ChannelGroup[channel.Id] = channel
+	ChannelGroup.Store(channel.Id, channel)
 }
 
 func (this *DefaultInboundHandler) ChannelInactive(channel *Channel) {
 	// 移除 channel
-	delete(ChannelGroup, channel.Id)
+	ChannelGroup.Delete(channel.Id)
 }
 
 func (this *DefaultInboundHandler) ChannelRead(channel *Channel, msg *MqttMessage) {
@@ -48,7 +48,7 @@ func (this *DefaultInboundHandler) ChannelRead(channel *Channel, msg *MqttMessag
 	case PUBLISH:
 		header := msg.VariableHeader.(*MqttPublishVaribleHeader)
 
-		log.Printf("topic: %s 内容:%s\n", header.TopicName, msg.Payload)
+		//log.Printf("topic: %s 内容:%s\n", header.TopicName, msg.Payload)
 
 		switch msg.FixedHeader.Qos {
 		case 0:
