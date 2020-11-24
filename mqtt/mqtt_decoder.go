@@ -89,8 +89,17 @@ func Decode(buf []byte) (*MqttMessage, []byte, error) {
 			return msg, buf[mqttMsgLen:], nil
 		}
 	case PUBLISH:
+		m := new(MqttPublishVaribleHeader)
+		index, err := m.ParseFrom(buf, fixedHeader.Qos, 1+digits)
+		if err != nil {
+			return nil, nil, err
+		}
+		msg.VariableHeader = m
 
-		fallthrough
+		// 获取 payload
+		msg.Payload = buf[index:mqttMsgLen]
+
+		return msg, buf[mqttMsgLen:], nil
 	case PUBACK:
 		fallthrough
 	case PUBREC:
@@ -102,6 +111,11 @@ func Decode(buf []byte) (*MqttMessage, []byte, error) {
 	case SUBSCRIBE:
 		fallthrough
 	case UNSUBSCRIBE:
+		//m := new(MqttMessageIdVariableHeader)
+		//from, err := m.ParseFrom(buf, 2)
+		//if err != nil {
+		//	return nil, nil, err
+		//}
 		return nil, nil, errors.New(fmt.Sprintf("非法的MQTT报文类型: %d", fixedHeader.MessageType))
 	case PINGREQ:
 		fallthrough
@@ -122,6 +136,7 @@ func DecodeMqttString(buf []byte, start int) (string, int) {
 	return string(buf[start+2 : start+2+u]), start + 2 + u
 }
 
+// 解码可变字节数组
 func DecodeMqttBytes(buf []byte, start int) ([]byte, int) {
 	// 先读取长度
 	u := int(binary.BigEndian.Uint16(buf[start:]))

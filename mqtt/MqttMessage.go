@@ -42,6 +42,21 @@ func BuildConnack(sessionPresent bool, code byte) *MqttMessage {
 	return msg
 }
 
+func BuildPubAck(packageId uint16) *MqttMessage {
+	msg := &MqttMessage{
+		FixedHeader: &MqttFixedHeader{
+			MessageType:  PUBACK,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 2,
+		},
+		VariableHeader: &MqttMessageIdVariableHeader{PackageId: packageId},
+		Payload:        nil,
+	}
+	return msg
+}
+
 func BuildPingAck() *MqttMessage {
 	msg := &MqttMessage{
 		FixedHeader: &MqttFixedHeader{
@@ -191,15 +206,37 @@ func ReadFrom(buf []byte) (result *MqttConnVariableHeader, _ error) {
 	return result, nil
 }
 
+// 可变头包含主题
 type MqttPublishVaribleHeader struct {
 	TopicName string
 	PackageId uint16
 }
 
-func (this *MqttPublishVaribleHeader) ParseFrom(buf []byte) {
-	var index int
-	this.TopicName, index = DecodeMqttString(buf, 0)
-	this.PackageId = binary.BigEndian.Uint16(buf[index:])
+func (this *MqttPublishVaribleHeader) ParseFrom(buf []byte, qos byte, start int) (int, error) {
+	this.TopicName, start = DecodeMqttString(buf, start)
+	if qos == 0 {
+		return start, nil
+	}
+	this.PackageId = binary.BigEndian.Uint16(buf[start:])
+	if this.PackageId == 0 {
+		return 0, errors.New("非法的 packageId:0")
+	}
+	return start + 2, nil
+}
+
+// 可变头仅包含 PackageId
+type MqttMessageIdVariableHeader struct {
+	PackageId uint16
+}
+
+func (this *MqttMessageIdVariableHeader) ParseFrom(buf []byte, start int) (int, error) {
+	msgId := binary.BigEndian.Uint16(buf)
+	if msgId == 0 {
+		return 0, errors.New("非法的 packageId:0")
+	}
+
+	this.PackageId = msgId
+	return start + 2, nil
 }
 
 /*             payload                  */

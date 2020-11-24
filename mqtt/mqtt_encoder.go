@@ -17,6 +17,14 @@ func Encode(msg *MqttMessage) []byte {
 		return append(buf, bytes...)
 	case PUBLISH:
 	case PUBACK:
+		variableHeader := msg.VariableHeader.(*MqttMessageIdVariableHeader)
+
+		buf := make([]byte, 4, 4)
+		buf[0] = PUBACK << 4
+		buf[1] = 2
+		buf[2] = byte(variableHeader.PackageId >> 8)
+		buf[3] = byte(variableHeader.PackageId)
+		return buf
 	case PUBREC:
 	case PUBREL:
 	case PUBCOMP:
