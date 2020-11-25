@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"mqtt-go/mqtt"
 	"net"
@@ -8,9 +9,12 @@ import (
 )
 
 func main() {
+	addr := flag.String("port", ":1884", "指定监听地址")
+	flag.Parse()
+
 	log.Printf("启动服务...")
 
-	l, err := net.Listen("tcp", ":1884")
+	l, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -16,42 +16,18 @@ func Encode(msg *MqttMessage) []byte {
 		bytes := connackVariableHeader.toBytes()
 		return append(buf, bytes...)
 	case PUBLISH:
+		panic("待完成")
 	case PUBACK:
-		variableHeader := msg.VariableHeader.(*MqttMessageIdVariableHeader)
-
-		buf := make([]byte, 4, 4)
-		buf[0] = PUBACK << 4
-		buf[1] = 2
-		buf[2] = byte(variableHeader.MessageId >> 8)
-		buf[3] = byte(variableHeader.MessageId)
-		return buf
+		fallthrough
 	case PUBREC:
-		variableHeader := msg.VariableHeader.(*MqttMessageIdVariableHeader)
-
-		buf := make([]byte, 4, 4)
-		buf[0] = PUBREC << 4
-		buf[1] = 2
-		buf[2] = byte(variableHeader.MessageId >> 8)
-		buf[3] = byte(variableHeader.MessageId)
-		return buf
+		fallthrough
 	case PUBREL:
-		variableHeader := msg.VariableHeader.(*MqttMessageIdVariableHeader)
-
-		buf := make([]byte, 4, 4)
-		buf[0] = PUBREL << 4
-		buf[1] = 2
-		buf[2] = byte(variableHeader.MessageId >> 8)
-		buf[3] = byte(variableHeader.MessageId)
-		return buf
+		fallthrough
+	case UNSUBACK:
+		fallthrough
 	case PUBCOMP:
 		variableHeader := msg.VariableHeader.(*MqttMessageIdVariableHeader)
-
-		buf := make([]byte, 4, 4)
-		buf[0] = PUBCOMP << 4
-		buf[1] = 2
-		buf[2] = byte(variableHeader.MessageId >> 8)
-		buf[3] = byte(variableHeader.MessageId)
-		return buf
+		return encodeMessageIdButNoPayload(fixedHeader.MessageType, variableHeader.MessageId)
 	case SUBACK:
 		variableHeader := msg.VariableHeader.(*MqttMessageIdVariableHeader)
 		resp := msg.Payload.([]byte)
@@ -69,7 +45,6 @@ func Encode(msg *MqttMessage) []byte {
 		buf = append(buf, resp...)
 
 		return buf
-	case UNSUBACK:
 	case PINGRESP:
 		buf := make([]byte, 2)
 		buf[0] = PINGRESP << 4
@@ -77,6 +52,15 @@ func Encode(msg *MqttMessage) []byte {
 	}
 
 	return nil
+}
+
+func encodeMessageIdButNoPayload(messageType byte, messageId uint16) []byte {
+	buf := make([]byte, 4, 4)
+	buf[0] = messageType << 4
+	buf[1] = 2
+	buf[2] = byte(messageId >> 8)
+	buf[3] = byte(messageId)
+	return buf
 }
 
 func encodeMqttBytes(len int) []byte {
