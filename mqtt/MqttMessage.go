@@ -42,18 +42,93 @@ func BuildConnack(sessionPresent bool, code byte) *MqttMessage {
 	return msg
 }
 
-func BuildPubAck(packageId uint16) *MqttMessage {
+func BuildPubAck(messageId uint16) *MqttMessage {
+	return buildMsgWithMessageId(messageId, PUBACK)
+}
+
+func BuildPubRec(messageId uint16) *MqttMessage {
+	return buildMsgWithMessageId(messageId, PUBREC)
+}
+
+func BuildPubRel(messageId uint16) *MqttMessage {
+	return buildMsgWithMessageId(messageId, PUBREL)
+}
+
+func BuildPubComp(messageId uint16) *MqttMessage {
+	return buildMsgWithMessageId(messageId, PUBCOMP)
+}
+
+func BuildSubAck(messageId uint16, resp []byte) *MqttMessage {
 	msg := &MqttMessage{
 		FixedHeader: &MqttFixedHeader{
+			MessageType:  SUBACK,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 0,
+		},
+		VariableHeader: &MqttMessageIdVariableHeader{MessageId: messageId},
+		Payload:        resp,
+	}
+
+	return msg
+}
+
+func BuildUnsubAck(messageId uint16) *MqttMessage {
+	return buildMsgWithMessageId(messageId, UNSUBACK)
+}
+
+// 构建无 payload，variableHeader 仅含 messageId 的响应报文
+// 支持 PUBACK, PUBREC, PUBREL, PUBCOMP, SUBACK, UNSUBACK
+func buildMsgWithMessageId(messageId uint16, messageType byte) *MqttMessage {
+	msg := &MqttMessage{
+		VariableHeader: &MqttMessageIdVariableHeader{MessageId: messageId},
+		Payload:        nil,
+	}
+
+	switch messageType {
+	case PUBACK:
+		msg.FixedHeader = &MqttFixedHeader{
 			MessageType:  PUBACK,
 			Qos:          0,
 			Dup:          false,
 			Retain:       false,
 			RemainLength: 2,
-		},
-		VariableHeader: &MqttMessageIdVariableHeader{PackageId: packageId},
-		Payload:        nil,
+		}
+	case PUBREC:
+		msg.FixedHeader = &MqttFixedHeader{
+			MessageType:  PUBREC,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 2,
+		}
+	case PUBREL:
+		msg.FixedHeader = &MqttFixedHeader{
+			MessageType:  PUBREL,
+			Qos:          1,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 2,
+		}
+	case PUBCOMP:
+		msg.FixedHeader = &MqttFixedHeader{
+			MessageType:  PUBCOMP,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 2,
+		}
+	case UNSUBACK:
+		msg.FixedHeader = &MqttFixedHeader{
+			MessageType:  UNSUBACK,
+			Qos:          0,
+			Dup:          false,
+			Retain:       false,
+			RemainLength: 2,
+		}
 	}
+
 	return msg
 }
 
@@ -209,7 +284,7 @@ func ReadFrom(buf []byte) (result *MqttConnVariableHeader, _ error) {
 // 可变头包含主题
 type MqttPublishVaribleHeader struct {
 	TopicName string
-	PackageId uint16
+	MessageId uint16
 }
 
 func (this *MqttPublishVaribleHeader) ParseFrom(buf []byte, qos byte, start int) (int, error) {
@@ -217,25 +292,25 @@ func (this *MqttPublishVaribleHeader) ParseFrom(buf []byte, qos byte, start int)
 	if qos == 0 {
 		return start, nil
 	}
-	this.PackageId = binary.BigEndian.Uint16(buf[start:])
-	if this.PackageId == 0 {
+	this.MessageId = binary.BigEndian.Uint16(buf[start:])
+	if this.MessageId == 0 {
 		return 0, errors.New("非法的 packageId:0")
 	}
 	return start + 2, nil
 }
 
-// 可变头仅包含 PackageId
+// 可变头仅包含 MessageId
 type MqttMessageIdVariableHeader struct {
-	PackageId uint16
+	MessageId uint16
 }
 
 func (this *MqttMessageIdVariableHeader) ParseFrom(buf []byte, start int) (int, error) {
-	msgId := binary.BigEndian.Uint16(buf)
+	msgId := binary.BigEndian.Uint16(buf[start:])
 	if msgId == 0 {
 		return 0, errors.New("非法的 packageId:0")
 	}
 
-	this.PackageId = msgId
+	this.MessageId = msgId
 	return start + 2, nil
 }
 
@@ -252,6 +327,39 @@ type MqttConnPayload struct {
 	WillMessage []byte
 }
 
-// connack
-type MqttConnAck struct {
+type MqttSubscribePayload struct {
+	Topics []*Topic
+}
+
+func (this *MqttSubscribePayload) ParseFrom(buf []byte, start int, messageLen int) (int, error) {
+	topics := make([]*Topic, 0, 1)
+	topic, index := "", start
+	for {
+		topic, index = DecodeMqttString(buf, index)
+
+		// The Server MUST treat a SUBSCRIBE packet as malformed and close the Network Connection
+		// if any of Reserved bits in the payload are non-zero, or QoS is not 0,1 or 2 [MQTT-3-8.3-4].
+		if buf[index]&0b11111100 != 0 || buf[index]&0b11 == 3 {
+			return 0, errors.New("非法的 SUBSCRIBE 报文")
+		}
+		topics = append(topics, &Topic{
+			Name: topic,
+			Qos:  buf[index] & 0b11,
+		})
+		index++
+
+		// 需要防止非法数据导致的无限循环
+		if messageLen == index {
+			this.Topics = topics
+			return index, nil
+		} else if messageLen < index {
+			return 0, errors.New("非法的 SUBSCRIBE 报文")
+		}
+	}
+}
+
+type Topic struct {
+	Name string
+
+	Qos byte
 }

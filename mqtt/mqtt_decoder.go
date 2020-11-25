@@ -107,16 +107,72 @@ func Decode(buf []byte) (*MqttMessage, []byte, error) {
 	case PUBREL:
 		fallthrough
 	case PUBCOMP:
-		fallthrough
+		m := new(MqttMessageIdVariableHeader)
+		_, err := m.ParseFrom(buf, 1+digits)
+		if err != nil {
+			return nil, nil, err
+		}
+		msg.VariableHeader = m
+
+		return msg, buf[mqttMsgLen:], nil
 	case SUBSCRIBE:
-		fallthrough
+		// Bits 3,2,1 and 0 of the fixed header of the SUBSCRIBE Control Packet
+		// are reserved and MUST be set to 0,0,1 and 0 respectively. The Server MUST
+		// treat any other value as malformed and close the Network Connection
+		// [MQTT-3.8.1-1].
+		if fixedHeader.Dup || fixedHeader.Qos != 1 || fixedHeader.Retain {
+			return nil, nil, errors.New("SUBSCRIBE 报文格式非法")
+		}
+
+		// 可变头
+		m := new(MqttMessageIdVariableHeader)
+		index, err := m.ParseFrom(buf, 1+digits)
+		if err != nil {
+			return nil, nil, err
+		}
+		msg.VariableHeader = m
+
+		// The payload of a SUBSCRIBE packet MUST contain at least one Topic Filter / QoS pair.
+		// A SUBSCRIBE packet with no payload is a protocol violation [MQTT-3.8.3-3].
+		// payload 检查, 至少四个字节
+		if mqttMsgLen-index < 4 {
+			return nil, nil, errors.New("非法的 SUBSCRIBE 报文")
+		}
+		payload := &MqttSubscribePayload{}
+		if _, err := payload.ParseFrom(buf, index, mqttMsgLen); err != nil {
+			return nil, nil, err
+		}
+		msg.Payload = payload
+
+		return msg, buf[mqttMsgLen:], nil
 	case UNSUBSCRIBE:
-		//m := new(MqttMessageIdVariableHeader)
-		//from, err := m.ParseFrom(buf, 2)
-		//if err != nil {
-		//	return nil, nil, err
-		//}
-		return nil, nil, errors.New(fmt.Sprintf("非法的MQTT报文类型: %d", fixedHeader.MessageType))
+		m := new(MqttMessageIdVariableHeader)
+		index, err := m.ParseFrom(buf, 1+digits)
+		if err != nil {
+			return nil, nil, err
+		}
+		msg.VariableHeader = m
+
+		// The Payload of an UNSUBSCRIBE packet MUST contain at least one Topic Filter.
+		// An UNSUBSCRIBE packet with no payload is a protocol violation [MQTT-3.10.3-2].
+		// payload 检查，至少三个字节
+		if mqttMsgLen-index < 3 {
+			return nil, nil, errors.New("非法的 UNSUBSCRIBE 报文")
+		}
+
+		topic, payload := "", make([]string, 0, 1)
+		for {
+			topic, index = DecodeMqttString(buf, index)
+			payload = append(payload, topic)
+			if index == mqttMsgLen {
+				break
+			} else if index > mqttMsgLen {
+				return nil, nil, errors.New("非法的 UNSUBSCRIBE 报文")
+			}
+		}
+		msg.Payload = payload
+
+		return msg, buf[mqttMsgLen:], nil
 	case PINGREQ:
 		fallthrough
 	case DISCONNECT:
