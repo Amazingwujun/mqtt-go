@@ -1,15 +1,18 @@
-package mqtt
+package channel
 
 import (
 	"log"
 	"math"
+	"mqtt-go/src/codec"
+	"mqtt-go/src/message"
 	"net"
 	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 )
+
+const CLIENT_ID = "CLIENT_ID"
 
 var (
 	idCounter uint64 = 0
@@ -34,10 +37,7 @@ type Channel struct {
 	// 与连接相关联的 kv
 	attr map[string]interface{}
 
-	// 进站数据处理
-	InboundHandler InboundHandler
-
-	encoder func(msg *MqttMessage) []byte
+	encoder func(msg *message.MqttMessage) []byte
 
 	// []byte pool
 	pool *sync.Pool
@@ -58,16 +58,15 @@ type Channel struct {
 // 构建一个新的 Channel
 func NewChannel(conn net.Conn) *Channel {
 	c := &Channel{
-		Id:             NewId(),
-		origin:         conn,
-		Closed:         false,
-		attr:           make(map[string]interface{}, 8),
-		InboundHandler: NewInboundHandler(),
-		Out:            make(chan []byte, 10),
-		encoder:        Encode,
-		pool:           bytesPool,
-		packageId:      0,
-		Stop:           make(chan struct{}),
+		Id:        NewId(),
+		origin:    conn,
+		Closed:    false,
+		attr:      make(map[string]interface{}, 8),
+		Out:       make(chan []byte, 10),
+		encoder:   codec.Encode,
+		pool:      bytesPool,
+		packageId: 0,
+		Stop:      make(chan struct{}),
 	}
 
 	return c
@@ -85,7 +84,7 @@ func (this *Channel) NextPackageId() uint16 {
 }
 
 // 写入数据
-func (this *Channel) Write(msg *MqttMessage) {
+func (this *Channel) Write(msg *message.MqttMessage) {
 	this.Out <- this.encoder(msg)
 }
 
@@ -129,30 +128,6 @@ func (this *Channel) Read(buf []byte) (int, error) {
 	return this.origin.Read(buf)
 }
 
-/************************************/
-/***** GOLANG.ORG/X/NET/CONTEXT *****/
-/************************************/
-
-// 不要调用此方法
-func (this *Channel) Deadline() (deadline time.Time, ok bool) {
-	return
-}
-
-// 返回停止型号 chan
-func (this *Channel) Done() <-chan struct{} {
-	return this.Stop
-}
-
-// 不用调用此方法
-func (this *Channel) Err() error {
-	return nil
-}
-
-// 不要调用此方法
-func (this *Channel) Value(key interface{}) interface{} {
-	return nil
-}
-
 var (
 	processId  int32
 	sequenceId int32
@@ -173,6 +148,7 @@ func NewId() string {
 	return strconv.FormatUint(atomic.AddUint64(&idCounter, 1), 10)
 }
 
+// mac 地址获取
 func machineId() (string, error) {
 	// 优先抓取环境变量
 	machineId := os.Getenv("mqttx.machineId")
@@ -195,4 +171,14 @@ func machineId() (string, error) {
 	}
 
 	return "", nil
+}
+
+// 返回与 Channel 关联的 clientId
+func (this *Channel) ClientId() string {
+	return this.attr[CLIENT_ID].(string)
+}
+
+// 返回与 Channel 关联的 clientId
+func (this *Channel) SaveClientId(clientId string) {
+	this.attr[CLIENT_ID] = clientId
 }

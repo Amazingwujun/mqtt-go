@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	"log"
-	"mqtt-go/mqtt"
+	"mqtt-go/src/channel"
+	"mqtt-go/src/codec"
+	"mqtt-go/src/handler"
 	"net"
 	"time"
 )
@@ -41,8 +43,8 @@ func handleNewConn(conn net.Conn) {
 	}()
 
 	log.Printf("remote: [%s]", conn.RemoteAddr().String())
-	wrapConn := mqtt.NewChannel(conn)
-	wrapConn.InboundHandler.ChannelActive(wrapConn)
+	wrapConn := channel.NewChannel(conn)
+	handler.FixedInboundHandler().ChannelActive(wrapConn)
 
 	// 释放资源并广播连接断开事件
 	defer func() {
@@ -51,7 +53,7 @@ func handleNewConn(conn net.Conn) {
 			log.Printf("连接关闭异常：%v", err)
 		}
 		log.Printf("客户端[%s]连接断开", wrapConn.Id)
-		wrapConn.InboundHandler.ChannelInactive(wrapConn)
+		handler.FixedInboundHandler().ChannelInactive(wrapConn)
 	}()
 
 	// 启动写入 goroutine
@@ -61,7 +63,7 @@ func handleNewConn(conn net.Conn) {
 	startReader(wrapConn)
 }
 
-func startReader(channel *mqtt.Channel) {
+func startReader(channel *channel.Channel) {
 	// 开始解码
 	var cumulation []byte
 	for {
@@ -87,12 +89,12 @@ func startReader(channel *mqtt.Channel) {
 
 		// 开始解码
 		for {
-			if mqttMessage, left, err := mqtt.Decode(cumulation); err != nil {
+			if mqttMessage, left, err := codec.Decode(cumulation); err != nil {
 				log.Printf("解码错误: %s\n", err.Error())
 				return
 			} else {
 				if mqttMessage != nil {
-					channel.InboundHandler.ChannelRead(channel, mqttMessage)
+					handler.FixedInboundHandler().ChannelRead(channel, mqttMessage)
 					cumulation = left
 					continue
 				}
@@ -108,7 +110,7 @@ func startReader(channel *mqtt.Channel) {
 	}
 }
 
-func startWriter(channel *mqtt.Channel) {
+func startWriter(channel *channel.Channel) {
 	for {
 		select {
 		case buf := <-channel.Out:
@@ -122,7 +124,7 @@ func startWriter(channel *mqtt.Channel) {
 }
 
 // 心跳处理
-func idleHandler(c chan bool, channel *mqtt.Channel) {
+func idleHandler(c chan bool, channel *channel.Channel) {
 	for {
 		select {
 		case <-time.After(time.Second * 15):

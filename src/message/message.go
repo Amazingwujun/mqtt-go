@@ -1,10 +1,28 @@
-package mqtt
+package message
 
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"mqtt-go/src/utils"
 	"time"
+)
+
+const (
+	CONNECT byte = iota + 1
+	CONNACK
+	PUBLISH
+	PUBACK
+	PUBREC
+	PUBREL
+	PUBCOMP
+	SUBSCRIBE
+	SUBACK
+	UNSUBSCRIBE
+	UNSUBACK
+	PINGREQ
+	PINGRESP
+	DISCONNECT
 )
 
 type MqttMessage struct {
@@ -23,7 +41,7 @@ func (this *MqttMessage) String() string {
 	return fmt.Sprintf("fixedHeader: %v variableHeader: %v payload: %v", *this.FixedHeader, this.VariableHeader, this.Payload)
 }
 
-func BuildConnack(sessionPresent bool, code byte) *MqttMessage {
+func BuildConnAck(sessionPresent bool, code byte) *MqttMessage {
 	msg := &MqttMessage{
 		FixedHeader: &MqttFixedHeader{
 			MessageType:  CONNACK,
@@ -32,7 +50,7 @@ func BuildConnack(sessionPresent bool, code byte) *MqttMessage {
 			Retain:       false,
 			RemainLength: 0,
 		},
-		VariableHeader: &MqttConnackVariableHeader{
+		VariableHeader: &MqttConnAckVariableHeader{
 			SessionPresent: sessionPresent,
 			Code:           code,
 		},
@@ -40,6 +58,24 @@ func BuildConnack(sessionPresent bool, code byte) *MqttMessage {
 	}
 
 	return msg
+}
+
+// 构建 publish 报文
+func BuildPublish(isDub bool, isRetain bool, qos byte, topic string, messageId uint16, payload []byte) *MqttMessage {
+	return &MqttMessage{
+		FixedHeader: &MqttFixedHeader{
+			MessageType:  PUBLISH,
+			Qos:          qos,
+			Dup:          isDub,
+			Retain:       isRetain,
+			RemainLength: 0,
+		},
+		VariableHeader: &MqttPublishVaribleHeader{
+			TopicName: topic,
+			MessageId: messageId,
+		},
+		Payload: payload,
+	}
 }
 
 func BuildPubAck(messageId uint16) *MqttMessage {
@@ -148,22 +184,7 @@ func BuildPingAck() *MqttMessage {
 
 /*             fixed header                  */
 
-func (this *MqttMessage) Write(channel *Channel) {
-	if channel.Closed {
-		return
-	}
-
-	switch this.FixedHeader.MessageType {
-	case CONNACK:
-
-	case PINGREQ:
-
-	}
-
-	//channel.Write()
-}
-
-// mqtt 消息固定头
+// src 消息固定头
 type MqttFixedHeader struct {
 	MessageType byte
 
@@ -225,13 +246,13 @@ type MqttConnVariableHeader struct {
 	KeepAlive time.Duration
 }
 
-type MqttConnackVariableHeader struct {
+type MqttConnAckVariableHeader struct {
 	SessionPresent bool
 
 	Code byte
 }
 
-func (this *MqttConnackVariableHeader) toBytes() []byte {
+func (this *MqttConnAckVariableHeader) ToBytes() []byte {
 	buf := make([]byte, 2)
 	if this.SessionPresent {
 		buf[0] = 1
@@ -244,11 +265,11 @@ func (this *MqttConnackVariableHeader) toBytes() []byte {
 func ReadFrom(buf []byte) (result *MqttConnVariableHeader, _ error) {
 
 	// 校验协议名称
-	if name, _ := DecodeMqttString(buf, 0); name != "MQTT" {
+	if name, _ := utils.DecodeMqttString(buf, 0); name != "MQTT" {
 		return nil, errors.New(fmt.Sprintf("非法的协议名:%s\n", name))
 	}
 
-	// mqtt v3.1.1 版本值为 4
+	// src v3.1.1 版本值为 4
 	if buf[6] != 4 {
 		return nil, errors.New(fmt.Sprintf("不支持版本: %d", buf[6]))
 	}
@@ -288,7 +309,7 @@ type MqttPublishVaribleHeader struct {
 }
 
 func (this *MqttPublishVaribleHeader) ParseFrom(buf []byte, qos byte, start int) (int, error) {
-	this.TopicName, start = DecodeMqttString(buf, start)
+	this.TopicName, start = utils.DecodeMqttString(buf, start)
 	if qos == 0 {
 		return start, nil
 	}
@@ -335,7 +356,7 @@ func (this *MqttSubscribePayload) ParseFrom(buf []byte, start int, messageLen in
 	topics := make([]*Topic, 0, 1)
 	topic, index := "", start
 	for {
-		topic, index = DecodeMqttString(buf, index)
+		topic, index = utils.DecodeMqttString(buf, index)
 
 		// The Server MUST treat a SUBSCRIBE packet as malformed and close the Network Connection
 		// if any of Reserved bits in the payload are non-zero, or QoS is not 0,1 or 2 [MQTT-3-8.3-4].
