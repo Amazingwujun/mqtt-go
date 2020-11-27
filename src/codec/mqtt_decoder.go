@@ -49,10 +49,8 @@ func Decode(buf []byte) (*message.MqttMessage, []byte, error) {
 		} else {
 			msg.VariableHeader = connVariableHeader
 			// conn 类型的报文固定头为 10 个字节
-			payload, err := decodePayload(fixedHeader.MessageType, connVariableHeader, buf[1+digits+10:])
-			if err != nil {
-				return nil, nil, err
-			}
+			payload := decodeConnPayload(connVariableHeader, buf[1+digits+10:])
+
 			msg.Payload = payload
 			return msg, buf[mqttMsgLen:], nil
 		}
@@ -151,36 +149,29 @@ func Decode(buf []byte) (*message.MqttMessage, []byte, error) {
 }
 
 // 解码载荷
-func decodePayload(messageType byte, variableHeader interface{}, buf []byte) (interface{}, error) {
-	switch messageType {
-	case message.CONNECT:
-		payload := new(message.MqttConnPayload)
+func decodeConnPayload(variableHeader interface{}, buf []byte) *message.MqttConnPayload {
+	payload := new(message.MqttConnPayload)
 
-		connVariableHeader := variableHeader.(*message.MqttConnVariableHeader)
-		index := 0
+	connVariableHeader := variableHeader.(*message.MqttConnVariableHeader)
+	index := 0
 
-		// clientId
-		payload.ClientId, index = utils.DecodeMqttString(buf, index)
+	// clientId
+	payload.ClientId, index = utils.DecodeMqttString(buf, index)
 
-		// 遗嘱消息
-		if connVariableHeader.WillFlag {
-			payload.WillTopic, index = utils.DecodeMqttString(buf, index)
-			payload.WillMessage, index = utils.DecodeMqttBytes(buf, index)
-		}
-
-		// 用户名/密码
-		if connVariableHeader.UsernameFlag {
-			payload.Username, index = utils.DecodeMqttString(buf, index)
-		}
-		if connVariableHeader.PasswordFlag {
-			payload.Password, index = utils.DecodeMqttString(buf, index)
-		}
-
-		return payload, nil
-	case message.PUBLISH:
-	case message.SUBSCRIBE:
-	case message.UNSUBSCRIBE:
+	// 遗嘱消息
+	if connVariableHeader.WillFlag {
+		payload.WillTopic, index = utils.DecodeMqttString(buf, index)
+		payload.WillMessage, index = utils.DecodeMqttBytes(buf, index)
 	}
 
-	return nil, nil
+	// 用户名/密码
+	if connVariableHeader.UsernameFlag {
+		payload.Username, index = utils.DecodeMqttString(buf, index)
+	}
+	if connVariableHeader.PasswordFlag {
+		payload.Password, index = utils.DecodeMqttString(buf, index)
+	}
+
+	return payload
+
 }

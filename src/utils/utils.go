@@ -74,19 +74,19 @@ func EncodeRemainLength(len int) []byte {
 
 // 解码 MQTT 中的字符串数据
 // 格式见: MQTTV3.1.1 -> 1.5.3 UTF-8 encoded strings
-func DecodeMqttString(buf []byte, start int) (string, int) {
+func DecodeMqttString(buf []byte, fromIndex int) (string, int) {
 	// 先读取长度
-	u := int(binary.BigEndian.Uint16(buf[start:]))
+	u := int(binary.BigEndian.Uint16(buf[fromIndex:]))
 
 	// 返回下一个未读字节的索引
-	return string(buf[start+2 : start+2+u]), start + 2 + u
+	return string(buf[fromIndex+2 : fromIndex+2+u]), fromIndex + 2 + u
 }
 
 // 解码可变字节数组
-func DecodeMqttBytes(buf []byte, start int) ([]byte, int) {
+func DecodeMqttBytes(buf []byte, fromIndex int) ([]byte, int) {
 	// 先读取长度
-	u := int(binary.BigEndian.Uint16(buf[start:]))
+	u := int(binary.BigEndian.Uint16(buf[fromIndex:]))
 
 	// 返回下一个未读字节的索引
-	return buf[start+2 : start+2+u], start + 2 + u
+	return buf[fromIndex+2 : fromIndex+2+u], fromIndex + 2 + u
 }

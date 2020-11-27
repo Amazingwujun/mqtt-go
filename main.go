@@ -14,14 +14,12 @@ func main() {
 	addr := flag.String("port", ":1884", "指定监听地址")
 	flag.Parse()
 
-	log.Printf("启动服务...")
-
 	l, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("服务器启动完成")
+	log.Printf("监听: %s", l.Addr().String())
 
 	for {
 		conn, err := l.Accept()
@@ -30,7 +28,6 @@ func main() {
 			continue
 		}
 
-		// 处理
 		go handleNewConn(conn)
 	}
 }
@@ -44,7 +41,7 @@ func handleNewConn(conn net.Conn) {
 
 	log.Printf("remote: [%s]", conn.RemoteAddr().String())
 	wrapConn := channel.NewChannel(conn)
-	handler.FixedInboundHandler().ChannelActive(wrapConn)
+	handler.ChannelActive(wrapConn)
 
 	// 释放资源并广播连接断开事件
 	defer func() {
@@ -53,7 +50,7 @@ func handleNewConn(conn net.Conn) {
 			log.Printf("连接关闭异常：%v", err)
 		}
 		log.Printf("客户端[%s]连接断开", wrapConn.Id)
-		handler.FixedInboundHandler().ChannelInactive(wrapConn)
+		handler.ChannelInactive(wrapConn)
 	}()
 
 	// 启动写入 goroutine
@@ -94,7 +91,7 @@ func startReader(channel *channel.Channel) {
 				return
 			} else {
 				if mqttMessage != nil {
-					handler.FixedInboundHandler().ChannelRead(channel, mqttMessage)
+					handler.ChannelRead(channel, mqttMessage)
 					cumulation = left
 					continue
 				}

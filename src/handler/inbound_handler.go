@@ -32,18 +32,18 @@ func FixedInboundHandler() *DefaultInboundHandler {
 }
 
 // tcp 连接建立
-func (this *DefaultInboundHandler) ChannelActive(channel *channel.Channel) {
+func ChannelActive(channel *channel.Channel) {
 	ChannelGroup.Store(channel.Id, channel)
 }
 
-func (this *DefaultInboundHandler) ChannelInactive(channel *channel.Channel) {
+func ChannelInactive(channel *channel.Channel) {
 	// 移除 channel
 	ChannelGroup.Delete(channel.Id)
 }
 
-func (this *DefaultInboundHandler) ChannelRead(channel *channel.Channel, msg *message.MqttMessage) {
-	messageType := msg.FixedHeader.MessageType
-	switch messageType {
+// 处理解包后的 message.MqttMessage
+func ChannelRead(channel *channel.Channel, msg *message.MqttMessage) {
+	switch msg.FixedHeader.MessageType {
 	case message.CONNECT:
 		HandleConn(channel, msg)
 	case message.PUBLISH:
@@ -65,5 +65,4 @@ func (this *DefaultInboundHandler) ChannelRead(channel *channel.Channel, msg *me
 	case message.DISCONNECT:
 		HandleDisconnect(channel, msg)
 	}
-
 }

@@ -1,22 +1,22 @@
 package channel
 
 import (
+	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"mqtt-go/src/codec"
 	"mqtt-go/src/message"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const CLIENT_ID = "CLIENT_ID"
-
-var (
-	idCounter uint64 = 0
-)
 
 // 字节池
 var bytesPool = &sync.Pool{New: func() interface{} {
@@ -25,7 +25,7 @@ var bytesPool = &sync.Pool{New: func() interface{} {
 
 // Channel 代表一个 TCP 连接及与连接相关的上下文, 处理逻辑中它绑定了固定的 goroutine
 type Channel struct {
-	// 短
+	// channel id
 	Id string
 
 	// 原始连接
@@ -36,8 +36,6 @@ type Channel struct {
 
 	// 与连接相关联的 kv
 	attr map[string]interface{}
-
-	encoder func(msg *message.MqttMessage) []byte
 
 	// []byte pool
 	pool *sync.Pool
@@ -58,12 +56,11 @@ type Channel struct {
 // 构建一个新的 Channel
 func NewChannel(conn net.Conn) *Channel {
 	c := &Channel{
-		Id:        NewId(),
+		Id:        newChannelId(),
 		origin:    conn,
 		Closed:    false,
 		attr:      make(map[string]interface{}, 8),
 		Out:       make(chan []byte, 10),
-		encoder:   codec.Encode,
 		pool:      bytesPool,
 		packageId: 0,
 		Stop:      make(chan struct{}),
@@ -85,7 +82,7 @@ func (this *Channel) NextPackageId() uint16 {
 
 // 写入数据
 func (this *Channel) Write(msg *message.MqttMessage) {
-	this.Out <- this.encoder(msg)
+	this.Out <- codec.Encode(msg)
 }
 
 // 直接写入数据
@@ -129,27 +126,39 @@ func (this *Channel) Read(buf []byte) (int, error) {
 }
 
 var (
-	processId  int32
-	sequenceId int32
+	machineId  string
+	processId  int
+	sequenceId int32 = 0
 )
 
 func init() {
+	// mac 地址
+	machineId, _ = getMachineId()
 
-	processId = int32(os.Getpid())
+	// pid
+	processId = os.Getpid()
 
-	log.Printf("pid: %d\n", processId)
-
-	atomic.AddInt32(&sequenceId, 10)
-
-	log.Printf("sequenceId: %d\n", sequenceId)
+	log.Printf("machineId:%s pid: %d\n", machineId, processId)
 }
 
-func NewId() string {
-	return strconv.FormatUint(atomic.AddUint64(&idCounter, 1), 10)
+func newChannelId() string {
+	return strconv.Itoa(int(atomic.AddInt32(&sequenceId, 1)))
+}
+
+// 生成 Channel id, 貌似没必要搞这么复杂的 id😳
+// 规则: md5(machineId + pid + timestamp + randomInt + sequenceId)
+func newId() string {
+	sb := strings.Builder{}
+	sb.WriteString(machineId + "_")
+	sb.WriteString(strconv.Itoa(processId) + "_")
+	sb.WriteString(strconv.FormatInt(time.Now().Unix(), 10) + "_")
+	sb.WriteString(fmt.Sprintf("%06d", rand.Int31n(1000000)) + "_")
+	sb.WriteString(fmt.Sprintf("%08d", int(atomic.AddInt32(&sequenceId, 1))))
+	return sb.String()
 }
 
 // mac 地址获取
-func machineId() (string, error) {
+func getMachineId() (string, error) {
 	// 优先抓取环境变量
 	machineId := os.Getenv("mqttx.machineId")
 	if machineId != "" {
