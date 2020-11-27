@@ -6,32 +6,73 @@ import (
 	"mqtt-go/src/channel"
 	"mqtt-go/src/message"
 	"mqtt-go/src/store"
+	"sync"
+	"time"
 )
+
+// clientId <==> channelId 映射
+var ClientChannelMap sync.Map
 
 // 处理 conn 报文
 func HandleConn(channel *channel.Channel, msg *message.MqttMessage) {
+	variableHeader := msg.VariableHeader.(*message.MqttConnVariableHeader)
 	payload := msg.Payload.(*message.MqttConnPayload)
 
+	// todo 认证
+
+	// client 关联 channel
 	channel.SaveClientId(payload.ClientId)
+
+	// 保存 client 与 channelId 的映射
+	ClientChannelMap.Store(payload.ClientId, channel.Id)
+
+	// keepalive
+	if v := float64(variableHeader.KeepAlive) * 1.5; v > 0 {
+		channel.Heartbeat = time.Duration(v)
+
+		// 提醒心跳变更
+		channel.InputNotify <- channel.Heartbeat
+	}
 
 	connack := message.BuildConnAck(false, 0)
 	channel.Write(connack)
 }
 
 // 处理 conn 报文
-func HandlePub(channel *channel.Channel, msg *message.MqttMessage) {
-	header := msg.VariableHeader.(*message.MqttPublishVaribleHeader)
+func HandlePub(channel0 *channel.Channel, msg *message.MqttMessage) {
+	variableHeader := msg.VariableHeader.(*message.MqttPublishVaribleHeader)
+	payload := msg.Payload.([]byte)
 
-	log.Printf("消息id:%d topic: %s 内容:%s\n", header.MessageId, header.TopicName, msg.Payload)
+	log.Printf("消息id:%d topic: %s 内容:%s\n", variableHeader.MessageId, variableHeader.TopicName, msg.Payload)
 
 	switch msg.FixedHeader.Qos {
 	case 0:
+		clients := store.Store.Search(variableHeader.TopicName)
+
+		for _, clientSub := range clients {
+
+			// qos 处理
+			qos := clientSub.Qos
+			if qos > msg.FixedHeader.Qos {
+				qos = msg.FixedHeader.Qos
+			}
+
+			// 构建 qos
+			publish := message.BuildPublish(false, false, clientSub.Qos, variableHeader.TopicName, channel0.NextPackageId(), payload)
+
+			// 发送消息
+			if channelId, ok := ClientChannelMap.Load(clientSub.ClientId); ok {
+				if c, ok := ChannelGroup.Load(channelId); ok {
+					c.(*channel.Channel).Write(publish)
+				}
+			}
+		}
 	case 1:
-		ack := message.BuildPubAck(header.MessageId)
-		channel.Write(ack)
+		ack := message.BuildPubAck(variableHeader.MessageId)
+		channel0.Write(ack)
 	case 2:
-		ack := message.BuildPubRec(header.MessageId)
-		channel.Write(ack)
+		ack := message.BuildPubRec(variableHeader.MessageId)
+		channel0.Write(ack)
 	default:
 		panic(fmt.Sprintf("非法的 Qos:%d\n", msg.FixedHeader.Qos))
 	}

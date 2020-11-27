@@ -10,11 +10,22 @@ import (
 	"time"
 )
 
-func main() {
-	addr := flag.String("port", ":1884", "指定监听地址")
-	flag.Parse()
+var (
+	addr      string
+	heartbeat time.Duration
+)
 
-	l, err := net.Listen("tcp", *addr)
+func main() {
+	flag.StringVar(&addr, "addr", ":1883", "监听地址及端口")
+	arg1 := flag.String("heartbeat", "1m", "心跳周期")
+	flag.Parse()
+	if v, err := time.ParseDuration(*arg1); err != nil {
+		log.Fatalf("非法的心跳格式:%s\n", v)
+	} else {
+		heartbeat = v
+	}
+
+	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,7 +51,7 @@ func handleNewConn(conn net.Conn) {
 	}()
 
 	log.Printf("remote: [%s]", conn.RemoteAddr().String())
-	wrapConn := channel.NewChannel(conn)
+	wrapConn := channel.NewChannel(conn, heartbeat)
 	handler.ChannelActive(wrapConn)
 
 	// 释放资源并广播连接断开事件
@@ -52,6 +63,9 @@ func handleNewConn(conn net.Conn) {
 		log.Printf("客户端[%s]连接断开", wrapConn.Id)
 		handler.ChannelInactive(wrapConn)
 	}()
+
+	// 心跳
+	go startHandleIdle(wrapConn)
 
 	// 启动写入 goroutine
 	go startWriter(wrapConn)
@@ -83,6 +97,9 @@ func startReader(channel *channel.Channel) {
 
 		// 回收 buf
 		channel.Put(buf)
+
+		// 新的报文读取通知
+		channel.InputNotify <- channel.Heartbeat
 
 		// 开始解码
 		for {
@@ -121,14 +138,19 @@ func startWriter(channel *channel.Channel) {
 }
 
 // 心跳处理
-func idleHandler(c chan bool, channel *channel.Channel) {
+func startHandleIdle(channel *channel.Channel) {
+	interval := channel.Heartbeat
 	for {
 		select {
-		case <-time.After(time.Second * 15):
+		case <-time.After(interval):
+			log.Printf("心跳超时: %v\n", time.Now())
+			if channel.Closed {
+				return
+			}
+
 			channel.Close()
 			return
-		case <-c:
-			log.Printf("收到消息通知")
+		case interval = <-channel.InputNotify:
 		}
 	}
 }

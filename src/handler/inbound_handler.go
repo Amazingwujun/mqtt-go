@@ -39,6 +39,7 @@ func ChannelActive(channel *channel.Channel) {
 func ChannelInactive(channel *channel.Channel) {
 	// 移除 channel
 	ChannelGroup.Delete(channel.Id)
+	ClientChannelMap.Delete(channel.ClientId())
 }
 
 // 处理解包后的 message.MqttMessage

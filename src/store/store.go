@@ -9,7 +9,7 @@ const PlaceHolder = true
 
 var Store = &store{
 	allTopics:    make(map[string]bool),
-	topicClients: make(map[string]map[string]bool),
+	topicClients: make(map[string]map[string]byte),
 	clientTopics: make(map[string]map[string]byte),
 }
 
@@ -20,14 +20,14 @@ type store struct {
 	lock0     sync.RWMutex
 
 	// topic(one) <--> clientId(many)
-	topicClients map[string]map[string]bool
+	topicClients map[string]map[string]byte
 
 	// client(one) <--> topic(many)
 	clientTopics map[string]map[string]byte
 }
 
 // 获取订阅指定 topic 的 client 集合
-func (this *store) Search(topic string) []string {
+func (this *store) Search(topic string) []*message.ClientSub {
 	this.lock0.RLock()
 	defer this.lock0.RUnlock()
 
@@ -35,9 +35,12 @@ func (this *store) Search(topic string) []string {
 	if m == nil {
 		return nil
 	}
-	clientIds := make([]string, 0, len(m))
-	for k, _ := range m {
-		_ = append(clientIds, k)
+	clientIds := make([]*message.ClientSub, 0, len(m))
+	for k, v := range m {
+		clientIds = append(clientIds, &message.ClientSub{
+			Qos:      v,
+			ClientId: k,
+		})
 	}
 
 	return clientIds
@@ -58,11 +61,11 @@ func (this *store) Subscribe(clientId string, topics ...*message.Topic) {
 		clientTopics[topic.Name] = topic.Qos
 
 		if this.topicClients[topic.Name] == nil {
-			this.topicClients[topic.Name] = make(map[string]bool)
+			this.topicClients[topic.Name] = make(map[string]byte)
 		}
 		topicClientSet := this.topicClients[topic.Name]
 
-		topicClientSet[clientId] = PlaceHolder
+		topicClientSet[clientId] = topic.Qos
 	}
 }
 

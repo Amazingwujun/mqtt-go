@@ -49,12 +49,20 @@ type Channel struct {
 	// 关闭信号
 	Stop chan struct{}
 
+	// 心跳周期
+	Heartbeat time.Duration
+
+	// 两个功能
+	// 1: 通知心跳处理 goroutine 目前有新的消息送达
+	// 2: 通知 main.startHandleIdle() 方法心跳时间变化
+	InputNotify chan time.Duration
+
 	// 读写锁
 	lock sync.RWMutex
 }
 
 // 构建一个新的 Channel
-func NewChannel(conn net.Conn) *Channel {
+func NewChannel(conn net.Conn, heartbeat time.Duration) *Channel {
 	c := &Channel{
 		Id:        newChannelId(),
 		origin:    conn,
@@ -64,6 +72,12 @@ func NewChannel(conn net.Conn) *Channel {
 		pool:      bytesPool,
 		packageId: 0,
 		Stop:      make(chan struct{}),
+
+		// 消息写入通知
+		InputNotify: make(chan time.Duration),
+
+		// 默认六十秒
+		Heartbeat: heartbeat,
 	}
 
 	return c

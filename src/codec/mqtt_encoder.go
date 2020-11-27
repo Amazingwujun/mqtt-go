@@ -82,7 +82,9 @@ func encodePublish(msg *message.MqttMessage) []byte {
 	// variableHeader
 	buf = append(buf, byte(topicLen>>8), byte(topicLen))
 	buf = append(buf, []byte(mpvh.TopicName)...)
-	buf = append(buf, byte(mpvh.MessageId>>8), byte(mpvh.MessageId))
+	if fixedHeader.Qos != 0 {
+		buf = append(buf, byte(mpvh.MessageId>>8), byte(mpvh.MessageId))
+	}
 
 	// payload
 	return append(buf, payload...)
