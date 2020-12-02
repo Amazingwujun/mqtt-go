@@ -34,8 +34,10 @@ func HandleConn(channel *channel.Channel, msg *message.MqttMessage) {
 		channel.InputNotify <- channel.Heartbeat
 	}
 
-	connack := message.BuildConnAck(false, 0)
-	channel.Write(connack)
+	connAck := message.BuildConnAck(false, 0)
+	channel.Write(connAck)
+
+	// 由于 mqtt-go 不支持消息持久化，所以不存在补发消息的逻辑
 }
 
 // 处理 conn 报文
@@ -44,11 +46,10 @@ func HandlePub(channel0 *channel.Channel, msg *message.MqttMessage) {
 	payload := msg.Payload.([]byte)
 
 	log.Printf("消息id:%d topic: %s 内容:%s\n", variableHeader.MessageId, variableHeader.TopicName, msg.Payload)
+	clients := store.Store.Search(variableHeader.TopicName)
 
 	switch msg.FixedHeader.Qos {
 	case 0:
-		clients := store.Store.Search(variableHeader.TopicName)
-
 		for _, clientSub := range clients {
 
 			// qos 处理
@@ -57,20 +58,57 @@ func HandlePub(channel0 *channel.Channel, msg *message.MqttMessage) {
 				qos = msg.FixedHeader.Qos
 			}
 
-			// 构建 qos
-			publish := message.BuildPublish(false, false, clientSub.Qos, variableHeader.TopicName, channel0.NextPackageId(), payload)
-
-			// 发送消息
-			if channelId, ok := ClientChannelMap.Load(clientSub.ClientId); ok {
-				if c, ok := ChannelGroup.Load(channelId); ok {
-					c.(*channel.Channel).Write(publish)
-				}
+			pubMsg := message.PubMsg{
+				Topic:          variableHeader.TopicName,
+				Qos:            qos,
+				SessionPresent: false,
+				Payload:        payload,
 			}
+
+			publish0(channel0, &pubMsg)
 		}
 	case 1:
+		for _, clientSub := range clients {
+
+			// qos 处理
+			qos := clientSub.Qos
+			if qos > msg.FixedHeader.Qos {
+				qos = msg.FixedHeader.Qos
+			}
+
+			pubMsg := message.PubMsg{
+				Topic:          variableHeader.TopicName,
+				Qos:            qos,
+				SessionPresent: false,
+				Payload:        payload,
+			}
+
+			// 发布消息
+			publish0(channel0, &pubMsg)
+		}
+
 		ack := message.BuildPubAck(variableHeader.MessageId)
 		channel0.Write(ack)
 	case 2:
+		for _, clientSub := range clients {
+
+			// qos 处理
+			qos := clientSub.Qos
+			if qos > msg.FixedHeader.Qos {
+				qos = msg.FixedHeader.Qos
+			}
+
+			pubMsg := message.PubMsg{
+				Topic:          variableHeader.TopicName,
+				Qos:            qos,
+				SessionPresent: false,
+				Payload:        payload,
+			}
+
+			// 发布消息
+			publish0(channel0, &pubMsg)
+		}
+
 		ack := message.BuildPubRec(variableHeader.MessageId)
 		channel0.Write(ack)
 	default:
@@ -78,9 +116,35 @@ func HandlePub(channel0 *channel.Channel, msg *message.MqttMessage) {
 	}
 }
 
+// 发布消息
+func publish0(channel0 *channel.Channel, msg *message.PubMsg) {
+	var pubMsg *message.MqttMessage
+	if msg.Qos == 0 {
+		pubMsg = message.BuildPublish(false, false, 0, msg.Topic, 0, msg.Payload)
+	} else {
+		messageId := channel0.NextMessageId()
+
+		// 构建 pubMsg
+		pubMsg = message.BuildPublish(false, false, msg.Qos, msg.Topic, channel0.NextMessageId(), msg.Payload)
+
+		// 保存 qos1/qos2 消息
+		channel0.SavePubMsg(messageId, msg)
+	}
+
+	// 发送消息
+	if channelId, ok := ClientChannelMap.Load(channel0.ClientId()); ok {
+		if c, ok := ChannelGroup.Load(channelId); ok {
+			c.(*channel.Channel).Write(pubMsg)
+		}
+	}
+}
+
 // 处理 conn 报文
 func HandlePubAck(channel *channel.Channel, msg *message.MqttMessage) {
+	variableHeader := msg.VariableHeader.(*message.MqttMessageIdVariableHeader)
 
+	// 移除 pubMsg
+	channel.RemovePubMsg(variableHeader.MessageId)
 }
 
 // 处理 conn 报文

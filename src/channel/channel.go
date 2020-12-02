@@ -59,6 +59,8 @@ type Channel struct {
 
 	// 读写锁
 	lock sync.RWMutex
+
+	pubMsgStore map[uint16]*message.PubMsg
 }
 
 // 构建一个新的 Channel
@@ -84,7 +86,7 @@ func NewChannel(conn net.Conn, heartbeat time.Duration) *Channel {
 }
 
 // 返回下一个 packageId
-func (this *Channel) NextPackageId() uint16 {
+func (this *Channel) NextMessageId() uint16 {
 	if this.packageId == 0 {
 		this.packageId++
 	} else if math.MaxUint16 == this.packageId {
@@ -137,6 +139,14 @@ func (this *Channel) HPut(k string, v interface{}) {
 // 读取数据
 func (this *Channel) Read(buf []byte) (int, error) {
 	return this.origin.Read(buf)
+}
+
+func (c *Channel) SavePubMsg(msgId uint16, pubMsg *message.PubMsg) {
+	c.pubMsgStore[msgId] = pubMsg
+}
+
+func (c *Channel) RemovePubMsg(msgId uint16) {
+	delete(c.pubMsgStore, msgId)
 }
 
 var (
