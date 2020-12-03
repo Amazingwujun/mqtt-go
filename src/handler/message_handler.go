@@ -89,28 +89,7 @@ func HandlePub(channel0 *channel.Channel, msg *message.MqttMessage) {
 
 		ack := message.BuildPubAck(variableHeader.MessageId)
 		channel0.Write(ack)
-	case 2:
-		for _, clientSub := range clients {
-
-			// qos 处理
-			qos := clientSub.Qos
-			if qos > msg.FixedHeader.Qos {
-				qos = msg.FixedHeader.Qos
-			}
-
-			pubMsg := message.PubMsg{
-				Topic:          variableHeader.TopicName,
-				Qos:            qos,
-				SessionPresent: false,
-				Payload:        payload,
-			}
-
-			// 发布消息
-			publish0(channel0, &pubMsg)
-		}
-
-		ack := message.BuildPubRec(variableHeader.MessageId)
-		channel0.Write(ack)
+	case 2: // unsupported
 	default:
 		panic(fmt.Sprintf("非法的 Qos:%d\n", msg.FixedHeader.Qos))
 	}
@@ -118,25 +97,39 @@ func HandlePub(channel0 *channel.Channel, msg *message.MqttMessage) {
 
 // 发布消息
 func publish0(channel0 *channel.Channel, msg *message.PubMsg) {
-	var pubMsg *message.MqttMessage
-	if msg.Qos == 0 {
-		pubMsg = message.BuildPublish(false, false, 0, msg.Topic, 0, msg.Payload)
-	} else {
-		messageId := channel0.NextMessageId()
-
-		// 构建 pubMsg
-		pubMsg = message.BuildPublish(false, false, msg.Qos, msg.Topic, channel0.NextMessageId(), msg.Payload)
-
-		// 保存 qos1/qos2 消息
-		channel0.SavePubMsg(messageId, msg)
-	}
-
-	// 发送消息
-	if channelId, ok := ClientChannelMap.Load(channel0.ClientId()); ok {
-		if c, ok := ChannelGroup.Load(channelId); ok {
-			c.(*channel.Channel).Write(pubMsg)
+	// search sub client list
+	clientSubs := store.Store.Search(msg.Topic)
+	for _, clientSub := range clientSubs {
+		clientId := clientSub.ClientId
+		value, ok := ClientChannelMap.Load(clientId)
+		var cc *channel.Channel
+		if !ok {
+			return
 		}
+		if clientChannel, ok := ChannelGroup.Load(value); !ok {
+			return
+		} else {
+			cc = clientChannel.(*channel.Channel)
+		}
+
+		var pubMsg *message.MqttMessage
+		switch msg.Qos {
+		case 0:
+			pubMsg = message.BuildPublish(false, false, 0, msg.Topic, 0, msg.Payload)
+		case 1:
+			messageId := cc.NextMessageId()
+
+			// 构建 pubMsg
+			pubMsg = message.BuildPublish(false, false, msg.Qos, msg.Topic, channel0.NextMessageId(), msg.Payload)
+
+			// 保存 qos1/qos2 消息
+			channel0.SavePubMsg(messageId, msg)
+		case 2: // unsupported
+			panic("不支持 qos2 级别的消息")
+		}
+		cc.Write(pubMsg)
 	}
+
 }
 
 // 处理 conn 报文
@@ -147,12 +140,12 @@ func HandlePubAck(channel *channel.Channel, msg *message.MqttMessage) {
 	channel.RemovePubMsg(variableHeader.MessageId)
 }
 
-// 处理 conn 报文
+// 处理 PubRec 报文
 func HandlePubRec(channel *channel.Channel, msg *message.MqttMessage) {
 
 }
 
-// 处理 conn 报文
+// 处理 PubRel 报文
 func HandlePubRel(channel *channel.Channel, msg *message.MqttMessage) {
 	header := msg.VariableHeader.(*message.MqttMessageIdVariableHeader)
 
@@ -162,7 +155,7 @@ func HandlePubRel(channel *channel.Channel, msg *message.MqttMessage) {
 	channel.Write(ack)
 }
 
-//
+// 处理 PubRel 报文
 func HandlePubCom(channel *channel.Channel, msg *message.MqttMessage) {
 
 }
@@ -208,4 +201,6 @@ func HandleDisconnect(channel *channel.Channel, msg *message.MqttMessage) {
 	if err := channel.Close(); err != nil {
 		log.Printf("连接关闭异常: %v\n", err)
 	}
+
+	store.Store.RemoveAllSub(channel.ClientId())
 }

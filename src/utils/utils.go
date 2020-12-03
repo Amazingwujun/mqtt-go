@@ -90,3 +90,15 @@ func DecodeMqttBytes(buf []byte, fromIndex int) ([]byte, int) {
 	// 返回下一个未读字节的索引
 	return buf[fromIndex+2 : fromIndex+2+u], fromIndex + 2 + u
 }
+
+// 用于判定客户订阅的主题是否匹配发布主题
+//	pub: 发布主题
+// 	sub: 定于主题 - 主题过滤器
+// 不支持通配符
+func Match(pub string, sub string) bool {
+	if pub == sub {
+		return true
+	}
+
+	return false
+}

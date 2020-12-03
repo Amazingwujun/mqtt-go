@@ -1,12 +1,10 @@
 # Project MQTT-GO
-`Mqtt-GO` 基于 [MQTT v3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) 协议，提供一个***完全基于内存*** 的 mqtt broker。
-
+`Mqtt-GO` 基于 [MQTT v3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) 协议，提供一个***常驻内存*** 的 mqtt broker。
 
 
 特点：完整实现 [MQTT v3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) 协议，不支持消息持久化。
 
 > **应用重启会导致 qos1, qos2 消息丢失**
-
 
 
 ## 快速开始
@@ -18,5 +16,8 @@
 
 构建完成后，直接运行二进制包即可(Linux 系统需要赋与 `mqtt-go` 可执行权限，`chmod 744 ./mqtt-go`)
 
-
-
+功能说明：
+1. 不支持遗嘱消息
+2. 不支持保留消息
+3. 不支持 qos2
+4. 不支持主题通配符

@@ -90,3 +90,11 @@ func (this *store) RemoveSub(clientId string, topics ...string) {
 		delete(topicClientSet, clientId)
 	}
 }
+
+// 移除全部订阅
+func (s *store) RemoveAllSub(clientId string) {
+	s.lock0.Lock()
+	defer s.lock0.Unlock()
+
+	delete(s.clientTopics, clientId)
+}
